@@ -1,0 +1,119 @@
+**task_storage.h
+
+#ifndef TASK_STORAGE_H
+#define TASK_STORAGE_H
+void storage_init(void);
+void vSDLoggerTask(void *pvParameters);
+#endif
+
+**task_storage.c 
+
+#include "system_config.h"
+#include "task_storage.h"
+
+// Hàm ghi log sự kiện vào thẻ SD (event_log.csv)
+void log_event_to_sd(const char* event_type, const char* detail) {
+    if (xSemaphoreTake(sd_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+        FILE *f = fopen("/sdcard/event_log.csv", "a");
+        if (f != NULL) {
+            time_t now; time(&now);
+            struct tm timeinfo; localtime_r(&now, &timeinfo);
+            char strftime_buf[32];
+            
+            if (now > 1704067200) { // Nếu có giờ chuẩn (> năm 2024)
+                strftime(strftime_buf, sizeof(strftime_buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
+            } else {                // Nếu Offline
+                snprintf(strftime_buf, sizeof(strftime_buf), "OFFLINE_%llu", (uint64_t)now);
+            }
+            
+            fprintf(f, "%s,%s,%s\n", strftime_buf, event_type, detail);
+            fclose(f);
+        }
+        xSemaphoreGive(sd_mutex);
+    }
+}
+
+void storage_init(void) {
+    esp_vfs_fat_sdmmc_mount_config_t mount_config = { .format_if_mount_failed = false, .max_files = 5, .allocation_unit_size = 16 * 1024 };
+    sdmmc_card_t *card;
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT(); host.slot = SPI3_HOST; host.max_freq_khz = 4000;
+    spi_bus_config_t bus_cfg = { .mosi_io_num = PIN_NUM_MOSI, .miso_io_num = PIN_NUM_MISO, .sclk_io_num = PIN_NUM_CLK, .quadwp_io_num = -1, .quadhd_io_num = -1, .max_transfer_sz = 4000 };
+    spi_bus_initialize(host.slot, &bus_cfg, SPI_DMA_CH_AUTO); 
+    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT(); slot_config.gpio_cs = PIN_NUM_CS; slot_config.host_id = host.slot;
+    
+    if (esp_vfs_fat_sdspi_mount("/sdcard", &host, &slot_config, &mount_config, &card) == ESP_OK) {
+        
+        // 1. Quét file datalog để lấy record_id cuối cùng
+        FILE *f_read = fopen("/sdcard/datalog.csv", "r");
+        if (f_read != NULL) {
+            char line[128];
+            while (fgets(line, sizeof(line), f_read)) {
+                unsigned long id;
+                if (sscanf(line, "%lu,", &id) == 1) current_record_id = (uint32_t)id;
+            }
+            fclose(f_read);
+        }
+        
+        // 2. Quét file backlog để đếm số bản ghi đang chờ (Hiển thị lên OLED)
+        FILE *f_backlog = fopen("/sdcard/backlog.csv", "r");
+        if (f_backlog != NULL) {
+            char line[128];
+            while (fgets(line, sizeof(line), f_backlog)) backlog_count++;
+            fclose(f_backlog);
+        }
+
+        sd_datalog = fopen("/sdcard/datalog.csv", "a");
+        if (sd_datalog != NULL) { 
+            if (ftell(sd_datalog) == 0) {
+                fprintf(sd_datalog, "RecordID,Timestamp,TimeValid,Temp,Hum,Pres,VOC,PM1.0,PM2.5,PM10,CO2,AQI\n");
+                fflush(sd_datalog); 
+                fsync(fileno(sd_datalog)); 
+            }
+        }
+    }
+}
+
+void vSDLoggerTask(void *pvParameters) {
+    SensorData_t sd_data;
+    uint8_t flush_counter = 0; 
+
+    while(1) {
+        if (xQueueReceive(sd_queue, &sd_data, portMAX_DELAY) == pdTRUE) {
+            if (xSemaphoreTake(sd_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+                if (sd_datalog != NULL) {
+                    
+                    char time_str[64];
+                    time_t t_val = (time_t)sd_data.timestamp;
+                    struct tm ti;
+                    localtime_r(&t_val, &ti);
+                    
+                    if (sd_data.time_valid == 1) {
+                        snprintf(time_str, sizeof(time_str), "%04d-%02d-%02d %02d:%02d:%02d", 
+                                 ti.tm_year + 1900, ti.tm_mon + 1, ti.tm_mday, 
+                                 ti.tm_hour, ti.tm_min, ti.tm_sec);
+                    } else {
+                        // Thêm đuôi (Est) để biết là giờ ước lượng khi mất mạng
+                        snprintf(time_str, sizeof(time_str), "%04d-%02d-%02d %02d:%02d:%02d (Est)", 
+                                 ti.tm_year + 1900, ti.tm_mon + 1, ti.tm_mday, 
+                                 ti.tm_hour, ti.tm_min, ti.tm_sec);
+                    }
+
+                    // Ghi vào file datalog.csv
+                    fprintf(sd_datalog, "%lu,%s,%d,%.1f,%.1f,%.1f,%d,%d,%d,%d,%d,%d\n", 
+                            (unsigned long)sd_data.record_id, time_str, sd_data.time_valid,
+                            sd_data.temp, sd_data.hum, sd_data.pres, sd_data.voc_dummy,
+                            sd_data.pm1_filtered, sd_data.pm25_filtered, sd_data.pm10_filtered, sd_data.eco2, sd_data.aqi);
+
+                    flush_counter++;
+                    
+                    if (flush_counter >= 15) { 
+                        fflush(sd_datalog);
+                        fsync(fileno(sd_datalog));
+                        flush_counter = 0;
+                    }
+                }
+                xSemaphoreGive(sd_mutex);
+            }
+        }
+    }
+}
