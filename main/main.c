@@ -37,7 +37,7 @@ void app_main(void) {
     }
     ESP_ERROR_CHECK(ret);
 
-    // Đọc thời gian đồng bộ cuối cùng từ NVS (Nếu có)
+    // Đọc thời gian đồng bộ cuối cùng từ NVS (nếu có)
     nvs_handle_t my_handle;
     if (nvs_open("storage", NVS_READWRITE, &my_handle) == ESP_OK) {
         nvs_get_u64(my_handle, "last_sync", &last_sync_unix);
@@ -54,9 +54,9 @@ void app_main(void) {
     sd_queue = xQueueCreate(10, sizeof(SensorData_t)); 
     mqtt_queue = xQueueCreate(20, sizeof(SensorData_t));
 
-    // 3. Khởi tạo các Module Phần cứng
+    // 3. Khởi tạo các module phần cứng
     io_init();
-    storage_init(); // Khởi tạo thẻ nhớ & Load ID trước khi chạy cảm biến
+    storage_init(); // Khởi tạo thẻ nhớ & load ID trước khi chạy cảm biến
     sensors_init();
     network_init();
 
@@ -70,7 +70,7 @@ void app_main(void) {
     } else if (reason == ESP_RST_INT_WDT || reason == ESP_RST_TASK_WDT) {
         strcpy(boot_msg, "BOOT_WATCHDOG_RESET");  // Mạch bị treo, hệ điều hành tự reset
     } else if (reason == ESP_RST_BROWNOUT) {
-        strcpy(boot_msg, "BOOT_BROWNOUT_DROP");   // Nguồn sụt áp do MQ135/APM2000 kéo dòng 5V quá lớn
+        strcpy(boot_msg, "BOOT_BROWNOUT_DROP");   // Sụt áp nguồn
     } else {
         snprintf(boot_msg, sizeof(boot_msg), "BOOT_REASON_CODE_%d", reason);
     }

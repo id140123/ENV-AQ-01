@@ -27,7 +27,7 @@ void io_init(void) {
     oled_timer = xTimerCreate("OLED_Timer", pdMS_TO_TICKS(15000), pdFALSE, (void *)0, oled_timeout_callback);
     xTimerStart(oled_timer, 0);
 
-    // 3. Khởi tạo và thiết lập màn hình OLED
+    // 3. Khởi tạo và thiết lập màn hình Oled
     i2c_master_init(&oled, OLED_SDA_PIN, OLED_SCL_PIN, -1); 
     ssd1306_init(&oled, 128, 64); 
     ssd1306_clear_screen(&oled, false);
@@ -40,7 +40,7 @@ void io_init(void) {
     snprintf(oled_buf, sizeof(oled_buf), "  Loading...   "); 
     ssd1306_display_text(&oled, 4, oled_buf, strlen(oled_buf), false);
     
-    // Giữ màn hình khởi động trong 2 giây (Cũng là thời gian chờ BME680/MQ135 nóng lên)
+    // Giữ màn hình khởi động trong 2 giây
     vTaskDelay(pdMS_TO_TICKS(2000)); 
 }
 
@@ -87,7 +87,7 @@ void vDisplayTask(void *pvParameters) {
             snprintf(buf, sizeof(buf), "eCO2 : %d ppm", local_data.eco2);        
             ssd1306_display_text(&oled, 3, buf, strlen(buf), false);
 
-            // Hiển thị Giờ Thực tế hoặc Offline (Dòng số 4)
+            // Hiển thị giờ thực tế hoặc offline
             if (local_data.time_valid == 1) {
                 time_t t = (time_t)local_data.timestamp;
                 struct tm ti;
@@ -99,8 +99,6 @@ void vDisplayTask(void *pvParameters) {
             }
             ssd1306_display_text(&oled, 4, buf, strlen(buf), false);
 
-            // Dòng 5: Trạng thái Mạng
-            // Dòng 6: Bộ đệm (BUF)
             if (uxBits & MQTT_CONNECTED_BIT) {
                 if (backlog_count > 0) {
                     snprintf(buf, sizeof(buf), "SYNCING...      ");
@@ -110,7 +108,6 @@ void vDisplayTask(void *pvParameters) {
                 } else {
                     snprintf(buf, sizeof(buf), "Blynk: ONLINE   ");
                     ssd1306_display_text(&oled, 5, buf, strlen(buf), false);
-                    // Làm sạch dòng 6 khi chạy bình thường
                     snprintf(buf, sizeof(buf), "                ");
                     ssd1306_display_text(&oled, 6, buf, strlen(buf), false);
                 }

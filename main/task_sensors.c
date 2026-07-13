@@ -112,7 +112,7 @@ void vSensorTask(void *pvParameters) {
                 was_time_synced = true;
             }
         } else {
-            // Tính toán giờ ước lượng khi mất mạng (Offline)
+            // Tính toán giờ ước lượng khi mất mạng (offline)
             new_data.timestamp = last_sync_unix + (esp_timer_get_time() / 1000000ULL);
             new_data.time_valid = 0;
             was_time_synced = false;
@@ -228,7 +228,7 @@ void vSensorTask(void *pvParameters) {
             static SensorData_t fallback_buffer[15]; 
             static uint8_t fallback_idx = 0;
 
-            // Nhét dữ liệu vào Đệm RAM
+            // Nhét dữ liệu vào đệm RAM
             fallback_buffer[fallback_idx] = new_data;
             fallback_idx++;
             

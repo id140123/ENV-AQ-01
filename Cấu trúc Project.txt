@@ -1,0 +1,10 @@
+project/
+├── CMakeLists.txt
+└── main/
+    ├── CMakeLists.txt         
+    ├── system_config.h        
+    ├── task_sensors.h / .c
+    ├── task_network.h / .c
+    ├── task_io.h / .c         
+    ├── task_storage.h / .c    
+    └── main.c                

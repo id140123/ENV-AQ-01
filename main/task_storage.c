@@ -12,7 +12,7 @@ void log_event_to_sd(const char* event_type, const char* detail) {
             
             if (now > 1704067200) { // Nếu có giờ chuẩn (> năm 2024)
                 strftime(strftime_buf, sizeof(strftime_buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
-            } else {                // Nếu Offline
+            } else {                // Nếu offline
                 snprintf(strftime_buf, sizeof(strftime_buf), "OFFLINE_%llu", (uint64_t)now);
             }
             
