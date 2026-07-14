@@ -15,7 +15,7 @@ void IRAM_ATTR button_isr_handler(void* arg) {
 
 void io_init(void) {
     // 1. Khởi tạo GPIO cho Còi và Nút nhấn
-    gpio_reset_pin(BUZZER_PIN); 
+    gpio_reset_pin(BUZZER_PIN);
     gpio_set_direction(BUZZER_PIN, GPIO_MODE_OUTPUT); 
     gpio_set_level(BUZZER_PIN, 0);
     
@@ -28,30 +28,29 @@ void io_init(void) {
     xTimerStart(oled_timer, 0);
 
     // 3. Khởi tạo và thiết lập màn hình Oled
-    i2c_master_init(&oled, OLED_SDA_PIN, OLED_SCL_PIN, -1); 
+    i2c_master_init(&oled, OLED_SDA_PIN, OLED_SCL_PIN, -1);
     ssd1306_init(&oled, 128, 64); 
     ssd1306_clear_screen(&oled, false);
 
     // Boot Screen
-    char oled_buf[64]; 
+    char oled_buf[64];
     snprintf(oled_buf, sizeof(oled_buf), "   ENV-AQ-01   "); 
     ssd1306_display_text(&oled, 2, oled_buf, strlen(oled_buf), false);
-    
     snprintf(oled_buf, sizeof(oled_buf), "  Loading...   "); 
     ssd1306_display_text(&oled, 4, oled_buf, strlen(oled_buf), false);
-    
     // Giữ màn hình khởi động trong 2 giây
-    vTaskDelay(pdMS_TO_TICKS(2000)); 
+    vTaskDelay(pdMS_TO_TICKS(2000));
 }
 
 void vButtonTask(void *pvParameters) {
     while(1) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         vTaskDelay(pdMS_TO_TICKS(50));
-        
         if (gpio_get_level(BUTTON_PIN) == 0) {
-            xEventGroupSetBits(sys_events, OLED_ON_BIT); // Bật màn hình
-            xTimerReset(oled_timer, 0);                  // Reset bộ đếm 15s
+            xEventGroupSetBits(sys_events, OLED_ON_BIT);
+            // Bật màn hình
+            xTimerReset(oled_timer, 0);
+            // Reset bộ đếm 15s
         }
     }
 }
@@ -74,7 +73,6 @@ void vDisplayTask(void *pvParameters) {
             }
             
             ssd1306_clear_screen(&oled, false);
-
             snprintf(buf, sizeof(buf), "Temp : %.1f C", local_data.temp);        
             ssd1306_display_text(&oled, 0, buf, strlen(buf), false);
             
@@ -83,10 +81,9 @@ void vDisplayTask(void *pvParameters) {
             
             snprintf(buf, sizeof(buf), "PM2.5: %d ug/m3", local_data.pm25_filtered); 
             ssd1306_display_text(&oled, 2, buf, strlen(buf), false);
-            
             snprintf(buf, sizeof(buf), "eCO2 : %d ppm", local_data.eco2);        
             ssd1306_display_text(&oled, 3, buf, strlen(buf), false);
-
+            
             // Hiển thị giờ thực tế hoặc offline
             if (local_data.time_valid == 1) {
                 time_t t = (time_t)local_data.timestamp;
@@ -98,7 +95,7 @@ void vDisplayTask(void *pvParameters) {
                 snprintf(buf, sizeof(buf), "Time : OFFLINE  ");
             }
             ssd1306_display_text(&oled, 4, buf, strlen(buf), false);
-
+            
             if (uxBits & MQTT_CONNECTED_BIT) {
                 if (backlog_count > 0) {
                     snprintf(buf, sizeof(buf), "SYNCING...      ");
@@ -138,13 +135,12 @@ void vDisplayTask(void *pvParameters) {
             is_cleared = true;
         }
         
-        vTaskDelay(pdMS_TO_TICKS(500)); // Tốc độ làm tươi màn hình 2 Hz
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
 void vBuzzerTask(void *pvParameters) {
     bool is_alarm = false;
-
     while(1) {
         if (xSemaphoreTake(data_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
             is_alarm = current_sensor_data.alarm_triggered;
@@ -156,7 +152,8 @@ void vBuzzerTask(void *pvParameters) {
             gpio_set_level(BUZZER_PIN, 1);
             vTaskDelay(pdMS_TO_TICKS(100));     // Kêu 100ms
             gpio_set_level(BUZZER_PIN, 0); 
-            vTaskDelay(pdMS_TO_TICKS(1900));    // Nghỉ 1900ms (tổng chu kỳ 2s)
+            vTaskDelay(pdMS_TO_TICKS(1900));
+            // Nghỉ 1900ms (tổng chu kỳ 2s)
         } else {
             gpio_set_level(BUZZER_PIN, 0);
             vTaskDelay(pdMS_TO_TICKS(500));     // Kiểm tra lại sau mỗi 0.5s

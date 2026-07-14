@@ -74,14 +74,14 @@ void vMqttTask(void *pvParameters) {
         esp_task_wdt_reset();
         EventBits_t uxBits = xEventGroupGetBits(sys_events);
         bool is_online = ((uxBits & WIFI_CONNECTED_BIT) && (uxBits & MQTT_CONNECTED_BIT));
-
+        
         // Logic xử lý đồng bộ dữ liệu backlog khi có kết nối mạng
         if (is_online) {
             
             // Phục hồi temp.csv nếu mất điện giữa chừng
             if (access("/sdcard/temp.csv", F_OK) == 0) {
                 if (xSemaphoreTake(sd_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
-                    rename("/sdcard/temp.csv", "/sdcard/backlog_recovered.csv");
+                     rename("/sdcard/temp.csv", "/sdcard/backlog_recovered.csv");
                     rename("/sdcard/backlog_recovered.csv", "/sdcard/backlog.csv");
                     xSemaphoreGive(sd_mutex);
                     ESP_LOGI(TAG, "=> Phuc hoi du lieu bi khet do mat dien truoc do!");
@@ -119,7 +119,6 @@ void vMqttTask(void *pvParameters) {
                     
                     while (has_data) {
                         has_data = false;
-                        
                         // ATOMIC LOCK 2: Lấy khóa chỉ để đọc 1 dòng duy nhất
                         if (xSemaphoreTake(sd_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
                             if (fgets(line, sizeof(line), temp_file)) {
@@ -133,9 +132,8 @@ void vMqttTask(void *pvParameters) {
                                 &rid, &ts, &tv, &t, &h, &p, &voc, &pm1, &pm25, &pm10, &co2, &aqi) == 12) {
                                 
                                 snprintf(payload, sizeof(payload), 
-                                    "{\"Nhiet do\":%.1f, \"Do am\":%.1f, \"Ap suat\":%.1f, \"Bui PM25\":%d, \"Bui PM10\":%d, \"Chi so CO2\":%d, \"Khi VOC\":%d, \"Chi so AQI tong hop\":%d, \"timestamp\":%llu, \"time_valid\":%d}", 
+                                     "{\"Nhiet do\":%.1f, \"Do am\":%.1f, \"Ap suat\":%.1f, \"Bui PM25\":%d, \"Bui PM10\":%d, \"Chi so CO2\":%d, \"Khi VOC\":%d, \"Chi so AQI tong hop\":%d, \"timestamp\":%llu, \"time_valid\":%d}", 
                                     t, h, p, pm25, pm10, co2, voc, aqi, ts * 1000, tv);
-
                                 esp_mqtt_client_publish(mqtt_client, "batch_ds", payload, strlen(payload), 0, 0);
 
                                 char time_str[32];
@@ -149,14 +147,12 @@ void vMqttTask(void *pvParameters) {
                                 }
                                 ESP_LOGI(TAG, "---> [SYNCING] Dang day bu goi tin %s ID:%lu | T:%.1f C | H:%.1f %% | P:%.1f hPa | VOC:%d | PM1:%d | PM2.5:%d | PM10:%d | CO2:%d | AQI:%d", 
                                      time_str, rid, t, h, p, voc, pm1, pm25, pm10, co2, aqi);
-                                
                                 // Trừ dồn thay vì set về 0
-                                if (backlog_count > 0) backlog_count--; 
+                                if (backlog_count > 0) backlog_count--;
                             }
                             esp_task_wdt_reset();
-                            
                             // Nghỉ 1 giây để Blynk nuốt data, Sensor ghi thẻ SD
-                            vTaskDelay(pdMS_TO_TICKS(1000)); 
+                            vTaskDelay(pdMS_TO_TICKS(1000));
                         }
                     }
                     
@@ -189,12 +185,12 @@ void vMqttTask(void *pvParameters) {
 
             if (is_online) {
                 throttle++;
-                if (throttle >= 5) {
+                
+                if (throttle >= 60 || mqtt_data.alarm_triggered) {
                     snprintf(payload, sizeof(payload), 
                         "{\"Nhiet do\":%.1f, \"Do am\":%.1f, \"Ap suat\":%.1f, \"Bui PM25\":%d, \"Bui PM10\":%d, \"Chi so CO2\":%d, \"Khi VOC\":%d, \"Chi so AQI tong hop\":%d, \"timestamp\":%llu, \"time_valid\":%d}", 
                         mqtt_data.temp, mqtt_data.hum, mqtt_data.pres, mqtt_data.pm25_filtered, 
                         mqtt_data.pm10_filtered, mqtt_data.eco2, mqtt_data.voc_dummy, mqtt_data.aqi, mqtt_data.timestamp * 1000, mqtt_data.time_valid);
-
                     esp_mqtt_client_publish(mqtt_client, "batch_ds", payload, strlen(payload), 0, 0);
                     
                     // In log ra Terminal để kiểm tra dữ liệu đã gửi
@@ -202,8 +198,9 @@ void vMqttTask(void *pvParameters) {
                              time_str, (unsigned long)mqtt_data.record_id, mqtt_data.temp, mqtt_data.hum, mqtt_data.pres, mqtt_data.voc_dummy, 
                              mqtt_data.pm1_filtered, mqtt_data.pm25_filtered, mqtt_data.pm10_filtered, mqtt_data.eco2, mqtt_data.aqi);
                              
-                    throttle = 0;
+                    throttle = 0; // Reset đếm sau khi đã gửi lên MQTT
                 }
+                
             } else {
                 if (xSemaphoreTake(sd_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
                     if (backlog_fp == NULL) backlog_fp = fopen("/sdcard/backlog.csv", "a");
@@ -215,16 +212,15 @@ void vMqttTask(void *pvParameters) {
                                 mqtt_data.temp, mqtt_data.hum, mqtt_data.pres, mqtt_data.voc_dummy,
                                 mqtt_data.pm1_filtered, 
                                 mqtt_data.pm25_filtered, mqtt_data.pm10_filtered, mqtt_data.eco2, mqtt_data.aqi);
-
                         if (bytes_written > 0) {
-                            backlog_count++; // Tăng hiển thị màn hình
-                            backlog_flush_counter++; // Tăng đếm nhịp lưu
+                            backlog_count++;           // Tăng hiển thị màn hình
+                            backlog_flush_counter++;   // Tăng đếm nhịp lưu
                             
                             // In log ra Terminal để kiểm tra dữ liệu đã lưu vào SD
                             ESP_LOGI(TAG, "---> [SD SAVED] %s ID:%lu | T:%.1f C | H:%.1f %% | P:%.1f hPa | VOC:%d | PM1:%d | PM2.5:%d | PM10:%d | CO2:%d | AQI:%d | So luong dang ket: %lu", 
                                      time_str, (unsigned long)mqtt_data.record_id, mqtt_data.temp, mqtt_data.hum, mqtt_data.pres, mqtt_data.voc_dummy, 
                                      mqtt_data.pm1_filtered, mqtt_data.pm25_filtered, mqtt_data.pm10_filtered, mqtt_data.eco2, mqtt_data.aqi, (unsigned long)backlog_count);
-                                     
+                            
                             if (backlog_flush_counter >= 15) { 
                                 fflush(backlog_fp);
                                 fsync(fileno(backlog_fp)); // fsync giúp lưu chắc chắn vào flash

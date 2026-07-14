@@ -4,7 +4,7 @@
 static const char *TAG = "SENSORS";
 
 // Cờ trạng thái bảo vệ hệ thống khỏi lỗi chia cho 0 của BME680
-static bool is_bme680_ok = false; 
+static bool is_bme680_ok = false;
 
 // Hàm tính toán AQI dựa trên giá trị PM2.5
 int get_aqi_pm25(int pm25) {
@@ -25,7 +25,7 @@ int generate_dummy_voc() {
 
 // Hàm tính toán nồng độ CO2 từ cảm biến MQ135 với bù nhiệt độ và độ ẩm
 int get_mq135_co2_compensated(int adc_raw, float current_temp, float current_hum) {
-    if (adc_raw == 0) return 400;
+    if (adc_raw == 0) return 123;
     float v_out = ((float)adc_raw / 4095.0) * 3.3; if (v_out <= 0.0) v_out = 0.001;
     float Rs_raw = ((5.0 - v_out) / v_out) * RL_VALUE;
     float CF = 1.0 - 0.00267 * (current_temp - 20.0) - 0.00154 * (current_hum - 33.0);
@@ -37,11 +37,9 @@ int get_mq135_co2_compensated(int adc_raw, float current_temp, float current_hum
 void sensors_init(void) {
     ESP_ERROR_CHECK(i2cdev_init()); 
     memset(&bme, 0, sizeof(bme680_t));
-    
     if (bme680_init_desc(&bme, BME_ADDR, I2C_NUM_1, BME_SDA_PIN, BME_SCL_PIN) == ESP_OK) {
         
         bme.i2c_dev.cfg.master.clk_speed = 100000;
-        
         if (bme680_init_sensor(&bme) == ESP_OK) {
             
             // Khởi tạo thành công, thiết lập thông số đo đạc
@@ -89,11 +87,15 @@ void vSensorTask(void *pvParameters) {
     
     // Khai báo theo dõi sự kiện
     bool was_time_synced = false;
-    
+
+    TickType_t xLastWakeTime;
+    const TickType_t xFrequency = pdMS_TO_TICKS(1000); 
+    xLastWakeTime = xTaskGetTickCount(); 
+
     while(1) {
         esp_task_wdt_reset(); 
         SensorData_t new_data = {0};
-        
+
         // Bắt đầu thuật toán Hybrid Clock
         time_t now; time(&now);
         if (now > 1704067200) { // Nếu giờ chuẩn > năm 2024
@@ -123,7 +125,6 @@ void vSensorTask(void *pvParameters) {
         // Kết thúc thuật toán Hybrid Clock
 
         new_data.voc_dummy = generate_dummy_voc();
-        
         // Chỉ số mặc định khi BME680 chưa đo được
         new_data.temp = -99.9;
         new_data.hum = -1.0; 
@@ -134,7 +135,7 @@ void vSensorTask(void *pvParameters) {
             if (bme680_force_measurement(&bme) == ESP_OK) {
                 vTaskDelay(bme_duration);
                 if (bme680_get_results_float(&bme, &bme_val) == ESP_OK) {
-                    new_data.temp = bme_val.temperature - 3.5;
+                    new_data.temp = bme_val.temperature - 4.5;
                     new_data.hum = bme_val.humidity; 
                     new_data.pres = bme_val.pressure;
                 }
@@ -221,37 +222,9 @@ void vSensorTask(void *pvParameters) {
             xSemaphoreGive(data_mutex);     
         }
         
-        xQueueSend(sd_queue, &new_data, pdMS_TO_TICKS(200));
-        
-        if (xQueueSend(mqtt_queue, &new_data, pdMS_TO_TICKS(200)) != pdPASS) {
-            
-            static SensorData_t fallback_buffer[15]; 
-            static uint8_t fallback_idx = 0;
+        xQueueSend(sd_queue, &new_data, 0);
+        xQueueSend(mqtt_queue, &new_data, 0);
 
-            // Nhét dữ liệu vào đệm RAM
-            fallback_buffer[fallback_idx] = new_data;
-            fallback_idx++;
-            
-            // Đúng 15 dòng (30 giây) mới mở thẻ nhớ lưu 1 lần
-            if (fallback_idx >= 15) {
-                if (xSemaphoreTake(sd_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
-                    FILE *bf = fopen("/sdcard/backlog.csv", "a");
-                    if (bf != NULL) {
-                        for (int i = 0; i < 15; i++) {
-                            fprintf(bf, "%lu,%llu,%d,%.1f,%.1f,%.1f,%d,%d,%d,%d,%d,%d\n",
-                                    (unsigned long)fallback_buffer[i].record_id, fallback_buffer[i].timestamp, fallback_buffer[i].time_valid,
-                                    fallback_buffer[i].temp, fallback_buffer[i].hum, fallback_buffer[i].pres, fallback_buffer[i].voc_dummy,
-                                    fallback_buffer[i].pm1_filtered, fallback_buffer[i].pm25_filtered, fallback_buffer[i].pm10_filtered, fallback_buffer[i].eco2, fallback_buffer[i].aqi);
-                        }
-                        fclose(bf);
-                        backlog_count += 15; // Cập nhật đồng bộ biến đếm hiển thị
-                    }
-                    xSemaphoreGive(sd_mutex);
-                }
-                fallback_idx = 0; // Đổ rác xong, reset đệm
-            }
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        vTaskDelayUntil(&xLastWakeTime, xFrequency); 
     }
 }

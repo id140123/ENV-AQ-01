@@ -33,8 +33,8 @@
 #include "mqtt_client.h"
 #include <i2cdev.h>    
 
-#define WIFI_SSID      "vivo X200 Pro" 
-#define WIFI_PASS      "minhduc2245" 
+#define WIFI_SSID      "Penhouse_2.4G" 
+#define WIFI_PASS      "3.141592654" 
 #define BLYNK_TOKEN    "yJEFzHSpHivECrE1WVyMObiM_zEi5FtN"
 
 #define OLED_SDA_PIN 14
